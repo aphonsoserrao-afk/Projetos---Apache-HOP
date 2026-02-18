@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pipeline>
+  <info>
+    <name>transf_pendencias_sinaflor</name>
+    <name_sync_with_filename>Y</name_sync_with_filename>
+    <description/>
+    <extended_description/>
+    <pipeline_version/>
+    <pipeline_type>Normal</pipeline_type>
+    <parameters>
+    </parameters>
+    <capture_transform_performance>N</capture_transform_performance>
+    <transform_performance_capturing_delay>1000</transform_performance_capturing_delay>
+    <transform_performance_capturing_size_limit>100</transform_performance_capturing_size_limit>
+    <created_user>-</created_user>
+    <created_date>2025/04/29 14:34:38.356</created_date>
+    <modified_user>-</modified_user>
+    <modified_date>2025/04/29 14:34:38.356</modified_date>
+  </info>
+  <notepads>
+  </notepads>
+  <order>
+    <hop>
+      <from>tab_update_in</from>
+      <to>tab_update_out</to>
+      <enabled>Y</enabled>
+    </hop>
+    <hop>
+      <from>consulta_f_sinaflor_aut_credito</from>
+      <to>f_sinaflor_aut_credito</to>
+      <enabled>Y</enabled>
+    </hop>
+    <hop>
+      <from>consulta_f_sinaflor_contr_empreendimemento</from>
+      <to>f_sinaflor_contr_empreendimemento</to>
+      <enabled>Y</enabled>
+    </hop>
+    <hop>
+      <from>download_aut_credito</from>
+      <to>planilha_autoricao</to>
+      <enabled>Y</enabled>
+    </hop>
+    <hop>
+      <from>download_empreendimento</from>
+      <to>planilha_empreendimento</to>
+      <enabled>Y</enabled>
+    </hop>
+  </order>
+  <transform>
+    <name>consulta_f_sinaflor_aut_credito</name>
+    <type>TableInput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <connection>con_sisflora</connection>
+    <execute_each_row>N</execute_each_row>
+    <limit>0</limit>
+    <sql>SELECT
+	s.id id_contr_aut_cred,
+	ac.ID id_aut,
+    ac.EMPREENDIMENTO_ID AS CEPROF,
+    e.nome AS EMPREENDIMENTO,
+    e.ie,
+    ac.NUMERO AS NUMERO,
+    ac.NUMERO_PROCESSO AS PROCESSO,
+    REGEXP_REPLACE(ac.TIPO_CREDITO || ' - ' || ac.SUBTIPO_CREDITO, '\[|\]', '') AS TIPO,
+    REGEXP_REPLACE(ac.SITUACAO, '\[|\]', '') AS SITUACAO,
+    s.DATA_CADASTRO,
+    s.DATA_ENVIO,
+    DECODE(LOWER(s.tipo_operacao), 'post', 'Cadastro', 'put', 'Atualização', 'delete', 'Exclusão', 'Desconhecido') AS DESC_TIPO_OPERACAO,
+    DECODE(s.status_requisicao, 1, 'Sucesso', 2, 'Erro', 'Desconhecido') AS DESC_STATUS_REQUISICAO,
+    NVL(DBMS_LOB.SUBSTR(s.mensagem_sinaflor, 4000), 'Erro Interno') AS MENSAGEM_SINAFLOR,
+    LISTAGG(msgs.message, ' | ') WITHIN GROUP (ORDER BY msgs.lvl) AS MENSAGEM_SUBERROS,
+    LISTAGG(msgs.campo, ' | ') WITHIN GROUP (ORDER BY msgs.lvl) AS CAMPOS_SUBERROS
+FROM sisflora2.CONTROLE_AUT_CREDITO_SINAFLOR s
+JOIN (
+    SELECT MAX(ID) AS ID
+    FROM sisflora2.CONTROLE_AUT_CREDITO_SINAFLOR
+    GROUP BY AUTORIZACAO_CREDITO_ID
+) g ON g.ID = s.ID
+JOIN sisflora2.AUTORIZACAO_CREDITO ac ON ac.ID = s.AUTORIZACAO_CREDITO_ID
+JOIN sisflora2.EMPREENDIMENTO e ON e.id = ac.empreendimento_id
+LEFT JOIN (
+    SELECT
+        id,
+        LEVEL AS lvl,
+        REGEXP_SUBSTR(DBMS_LOB.SUBSTR(mensagem_sinaflor, 4000), '"message"\s*:\s*"([^"]+)"', 1, LEVEL, NULL, 1) AS message,
+        REGEXP_SUBSTR(DBMS_LOB.SUBSTR(mensagem_sinaflor, 4000), '"campo"\s*:\s*"([^"]+)"', 1, LEVEL, NULL, 1) AS campo
+    FROM sisflora2.CONTROLE_AUT_CREDITO_SINAFLOR
+    CONNECT BY PRIOR id = id AND LEVEL &lt;= REGEXP_COUNT(DBMS_LOB.SUBSTR(mensagem_sinaflor, 4000), '"message"\s*:\s*"')
+          AND PRIOR DBMS_RANDOM.VALUE IS NOT NULL
+) msgs ON msgs.id = s.id
+WHERE 1 = 1
+  -- AND s.STATUS_REQUISICAO = 2
+  AND s.TIPO_OPERACAO != 'DELETE'
+GROUP BY
+	s.id,
+    ac.EMPREENDIMENTO_ID,
+    e.nome,
+    e.ie,
+    ac.NUMERO,
+    ac.NUMERO_PROCESSO,
+    ac.TIPO_CREDITO,
+    ac.SUBTIPO_CREDITO,
+    ac.SITUACAO,
+    s.DATA_CADASTRO,
+    s.data_envio,
+    s.tipo_operacao,
+    s.status_requisicao,
+    DBMS_LOB.SUBSTR(s.mensagem_sinaflor, 4000),
+    ac.ID
+ORDER BY TO_NUMBER(NULLIF(REGEXP_SUBSTR(ac.EMPREENDIMENTO_ID, '\d+'), '')), ac.ID</sql>
+    <variables_active>N</variables_active>
+    <attributes/>
+    <GUI>
+      <xloc>176</xloc>
+      <yloc>32</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>consulta_f_sinaflor_contr_empreendimemento</name>
+    <type>TableInput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <connection>con_sisflora</connection>
+    <execute_each_row>N</execute_each_row>
+    <limit>0</limit>
+    <sql>-- EMPREENDIMENTOS
+SELECT
+    e.ID,
+    e.NOME,
+    NVL(e.CNPJ, e.CPF) AS CPF_CNPJ,
+    e.LATITUDE_ENTRADA_GDEC,
+    e.LONGITUDE_ENTRADA_GDEC,
+    m.TEXTO MUNICIPIO_ATIVIDADE,
+    REGEXP_REPLACE(e.CLASSIFICACAO, '\[|\]', '') AS TIPO,
+    REGEXP_REPLACE(e.SITUACAO, '(\[|\])', '') SITUACAO,
+    s.DATA_CADASTRO,
+    s.DATA_ENVIO, 
+	s.TIPO_OPERACAO,
+    CASE 
+    	WHEN s.STATUS_REQUISICAO = 0 THEN 'Não enviado'	
+    	WHEN s.STATUS_REQUISICAO = 1 THEN 'Enviado e salvo/alterado/deletado com sucesso'
+    	WHEN s.STATUS_REQUISICAO = 2 THEN 'Enviado e com erros'
+    END AS STATUS_ENVIO,
+    s.MENSAGEM_SINAFLOR AS "Log"
+FROM sisflora2.CONTROLE_EMP_SINAFLOR s
+JOIN (
+    SELECT MAX(ID) AS ID
+    FROM sisflora2.CONTROLE_EMP_SINAFLOR
+    GROUP BY EMPREENDIMENTO_ID
+) g ON g.ID = s.ID
+JOIN sisflora2.EMPREENDIMENTO e ON e.ID = s.EMPREENDIMENTO_ID
+JOIN sisflora2.MUNICIPIO m ON e.ENDERECO_ATIV_MUNICIP_ID = m.ID
+WHERE 1 = 1
+-- AND s.STATUS_REQUISICAO = 2
+  AND s.TIPO_OPERACAO != 'DELETE'
+ORDER BY e.ID</sql>
+    <variables_active>N</variables_active>
+    <attributes/>
+    <GUI>
+      <xloc>176</xloc>
+      <yloc>128</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>download_aut_credito</name>
+    <type>TableInput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <connection>saida_dw_semas</connection>
+    <execute_each_row>N</execute_each_row>
+    <limit>0</limit>
+    <sql>SELECT ceprof
+	, empreendimento
+	, ie
+	, numero
+	, processo
+	, tipo
+	, situacao
+	, to_char(data_cadastro, 'dd-mm-yyyy hh:mm:ss') data_cadastro
+	, to_char(data_envio, 'dd-mm-yyyy hh:mm:ss') data_envio
+	, desc_tipo_operacao
+	, desc_status_requisicao
+	, mensagem_suberros  
+FROM dados_pendencias_sinaflor.f_sinaflor_aut_credito_2
+
+</sql>
+    <variables_active>N</variables_active>
+    <attributes/>
+    <GUI>
+      <xloc>752</xloc>
+      <yloc>16</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>download_empreendimento</name>
+    <type>TableInput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <connection>saida_dw_semas</connection>
+    <execute_each_row>N</execute_each_row>
+    <limit>0</limit>
+    <sql>SELECT id as ceprof
+	, nome as empreendimento
+	, cpf_cnpj
+	, latitude_entrada_gdec
+	, longitude_entrada_gdec
+	, longitude_entrada_gdec
+	, municipio_atividade
+	, tipo
+	, situacao
+	, to_char(data_cadastro, 'dd-mm-yyyy hh:mm:ss') as data_cadastro
+	, to_char(data_envio, 'dd-mm-yyyy hh:mm:ss') as data_envio
+	, tipo_operacao as metodo_envio
+	, status_envio
+FROM dados_pendencias_sinaflor.f_sinaflor_contr_empreendimemento
+
+</sql>
+    <variables_active>N</variables_active>
+    <attributes/>
+    <GUI>
+      <xloc>752</xloc>
+      <yloc>112</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>f_sinaflor_aut_credito</name>
+    <type>TableOutput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <commit>1000</commit>
+    <connection>saida_dw_semas</connection>
+    <fields>
+</fields>
+    <ignore_errors>N</ignore_errors>
+    <only_when_have_rows>N</only_when_have_rows>
+    <partitioning_daily>N</partitioning_daily>
+    <partitioning_enabled>N</partitioning_enabled>
+    <partitioning_monthly>Y</partitioning_monthly>
+    <return_keys>N</return_keys>
+    <schema>dados_pendencias_sinaflor</schema>
+    <specify_fields>N</specify_fields>
+    <table>f_sinaflor_aut_credito_2</table>
+    <tablename_in_field>N</tablename_in_field>
+    <tablename_in_table>Y</tablename_in_table>
+    <truncate>Y</truncate>
+    <use_batch>Y</use_batch>
+    <attributes/>
+    <GUI>
+      <xloc>464</xloc>
+      <yloc>32</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>f_sinaflor_contr_empreendimemento</name>
+    <type>TableOutput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <commit>1000</commit>
+    <connection>saida_dw_semas</connection>
+    <fields>
+</fields>
+    <ignore_errors>N</ignore_errors>
+    <only_when_have_rows>N</only_when_have_rows>
+    <partitioning_daily>N</partitioning_daily>
+    <partitioning_enabled>N</partitioning_enabled>
+    <partitioning_monthly>Y</partitioning_monthly>
+    <return_keys>N</return_keys>
+    <schema>dados_pendencias_sinaflor</schema>
+    <specify_fields>N</specify_fields>
+    <table>f_sinaflor_contr_empreendimemento</table>
+    <tablename_in_field>N</tablename_in_field>
+    <tablename_in_table>Y</tablename_in_table>
+    <truncate>Y</truncate>
+    <use_batch>Y</use_batch>
+    <attributes/>
+    <GUI>
+      <xloc>464</xloc>
+      <yloc>128</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>planilha_autoricao</name>
+    <type>GoogleSheetsOutput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <APPEND>N</APPEND>
+    <CREATE>Y</CREATE>
+    <SHAREDOMAIN/>
+    <SHAREEMAIL/>
+    <jsonCredentialPath>C:\chave_api_gesis\gesissemasbi-82dfc2a0cffb.json</jsonCredentialPath>
+    <spreadsheetKey>14ItDAJIWclP7j8F_m5tezxId5taDJ6ED3e0Dig2PjJM</spreadsheetKey>
+    <timeout>5</timeout>
+    <worksheetId>AUTORIZACAO</worksheetId>
+    <attributes/>
+    <GUI>
+      <xloc>1024</xloc>
+      <yloc>16</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>planilha_empreendimento</name>
+    <type>GoogleSheetsOutput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <APPEND>N</APPEND>
+    <CREATE>Y</CREATE>
+    <SHAREDOMAIN/>
+    <SHAREEMAIL/>
+    <jsonCredentialPath>C:\chave_api_gesis\gesissemasbi-82dfc2a0cffb.json</jsonCredentialPath>
+    <spreadsheetKey>14ItDAJIWclP7j8F_m5tezxId5taDJ6ED3e0Dig2PjJM</spreadsheetKey>
+    <timeout>5</timeout>
+    <worksheetId>EMPREENDIMENTO</worksheetId>
+    <attributes/>
+    <GUI>
+      <xloc>1024</xloc>
+      <yloc>112</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>tab_update_in</name>
+    <type>TableInput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <connection>saida_dw_semas</connection>
+    <execute_each_row>N</execute_each_row>
+    <limit>0</limit>
+    <sql>SELECT CURRENT_TIMESTAMP(0);</sql>
+    <variables_active>N</variables_active>
+    <attributes/>
+    <GUI>
+      <xloc>752</xloc>
+      <yloc>208</yloc>
+    </GUI>
+  </transform>
+  <transform>
+    <name>tab_update_out</name>
+    <type>TableOutput</type>
+    <description/>
+    <distribute>Y</distribute>
+    <custom_distribution/>
+    <copies>1</copies>
+    <partitioning>
+      <method>none</method>
+      <schema_name/>
+    </partitioning>
+    <commit>1000</commit>
+    <connection>saida_dw_semas</connection>
+    <fields>
+      <field>
+        <column_name>data_updated</column_name>
+        <stream_name>current_timestamp</stream_name>
+      </field>
+    </fields>
+    <ignore_errors>N</ignore_errors>
+    <only_when_have_rows>N</only_when_have_rows>
+    <partitioning_daily>N</partitioning_daily>
+    <partitioning_enabled>N</partitioning_enabled>
+    <partitioning_monthly>Y</partitioning_monthly>
+    <return_keys>N</return_keys>
+    <schema>dados_pendencias_sinaflor</schema>
+    <specify_fields>N</specify_fields>
+    <table>d_atualizacao</table>
+    <tablename_in_field>N</tablename_in_field>
+    <tablename_in_table>Y</tablename_in_table>
+    <truncate>Y</truncate>
+    <use_batch>Y</use_batch>
+    <attributes/>
+    <GUI>
+      <xloc>1008</xloc>
+      <yloc>208</yloc>
+    </GUI>
+  </transform>
+  <transform_error_handling>
+  </transform_error_handling>
+  <attributes/>
+</pipeline>
